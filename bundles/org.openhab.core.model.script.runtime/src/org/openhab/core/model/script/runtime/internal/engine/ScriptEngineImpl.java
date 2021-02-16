@@ -22,15 +22,6 @@ import org.eclipse.emf.common.util.URI;
 import org.eclipse.emf.ecore.EObject;
 import org.eclipse.emf.ecore.resource.Resource;
 import org.eclipse.emf.ecore.resource.Resource.Diagnostic;
-import org.eclipse.emf.ecore.resource.ResourceSet;
-import org.openhab.core.model.core.ModelParser;
-import org.openhab.core.model.script.ScriptServiceUtil;
-import org.openhab.core.model.script.ScriptStandaloneSetup;
-import org.openhab.core.model.script.engine.Script;
-import org.openhab.core.model.script.engine.ScriptEngine;
-import org.openhab.core.model.script.engine.ScriptExecutionException;
-import org.openhab.core.model.script.engine.ScriptParsingException;
-import org.openhab.core.model.script.runtime.ScriptRuntime;
 import org.eclipse.xtext.diagnostics.Severity;
 import org.eclipse.xtext.resource.XtextResource;
 import org.eclipse.xtext.resource.XtextResourceSet;
@@ -40,6 +31,14 @@ import org.eclipse.xtext.validation.CheckMode;
 import org.eclipse.xtext.validation.IResourceValidator;
 import org.eclipse.xtext.validation.Issue;
 import org.eclipse.xtext.xbase.XExpression;
+import org.openhab.core.model.core.ModelParser;
+import org.openhab.core.model.script.ScriptServiceUtil;
+import org.openhab.core.model.script.ScriptStandaloneSetup;
+import org.openhab.core.model.script.engine.Script;
+import org.openhab.core.model.script.engine.ScriptEngine;
+import org.openhab.core.model.script.engine.ScriptExecutionException;
+import org.openhab.core.model.script.engine.ScriptParsingException;
+import org.openhab.core.model.script.runtime.ScriptRuntime;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
@@ -123,16 +122,7 @@ public class ScriptEngineImpl implements ScriptEngine, ModelParser {
     }
 
     private XExpression parseScriptIntoXTextEObject(String scriptAsString) throws ScriptParsingException {
-        XtextResourceSet resourceSet = getResourceSet();
-        Resource resource = resourceSet.createResource(computeUnusedUri(resourceSet)); // IS-A XtextResource
-        try {
-            resource.load(new StringInputStream(scriptAsString, StandardCharsets.UTF_8.name()),
-                    resourceSet.getLoadOptions());
-        } catch (IOException e) {
-            throw new ScriptParsingException(
-                    "Unexpected IOException; from close() of a String-based ByteArrayInputStream, no real I/O; how is that possible???",
-                    scriptAsString, e);
-        }
+        Resource resource = getResource(scriptAsString); // IS-A XtextResource
 
         List<Diagnostic> errors = resource.getErrors();
         if (!errors.isEmpty()) {
@@ -155,17 +145,24 @@ public class ScriptEngineImpl implements ScriptEngine, ModelParser {
         }
     }
 
-    protected URI computeUnusedUri(ResourceSet resourceSet) {
+    protected Resource getResource(String scriptAsString) throws ScriptParsingException {
         String name = "__synthetic";
-        final int MAX_TRIES = 1000;
-        for (int i = 0; i < MAX_TRIES; i++) {
-            // NOTE: The "filename extension" (".script") must match the file.extensions in the *.mwe2
-            URI syntheticUri = URI.createURI(name + Math.random() + "." + Script.SCRIPT_FILEEXT);
-            if (resourceSet.getResource(syntheticUri, false) == null) {
-                return syntheticUri;
+        // NOTE: The "filename extension" (".script") must match the file.extensions in the *.mwe2
+        URI uri = URI.createURI(name + scriptAsString.hashCode() + "." + Script.SCRIPT_FILEEXT);
+        XtextResourceSet resourceSet = getResourceSet();
+        Resource resource = resourceSet.getResource(uri, false);
+        if (resource == null) {
+            resource = resourceSet.createResource(uri);
+            try {
+                resource.load(new StringInputStream(scriptAsString, StandardCharsets.UTF_8.name()),
+                        resourceSet.getLoadOptions());
+            } catch (IOException e) {
+                throw new ScriptParsingException(
+                        "Unexpected IOException; from close() of a String-based ByteArrayInputStream, no real I/O; how is that possible???",
+                        scriptAsString, e);
             }
         }
-        throw new IllegalStateException();
+        return resource;
     }
 
     protected List<Issue> validate(EObject model) {
